@@ -62,9 +62,11 @@ Say *"check the alerts on CYBERHAWK-PC"* and Claude will pull the alerts, rank t
 investigation playbook, pivot into Zeek connection/DNS/TLS logs and full PCAP, reach a verdict, and offer
 to open a case and author a detection so it's caught automatically next time.
 
-It drives the official **[Security Onion MCP server](https://github.com/Security-Onion-Solutions/securityonion-mcp)**
-(`query_events`, `get_playbook_questions`, `ping`) when it's connected, and falls back cleanly to the
-**Connect REST API** or the **manager CLI** when it isn't — so it's useful on every grid, Community or Pro.
+It's designed to pair with the **[CyberHawk Security Onion CE MCP](https://github.com/rudraverma/securityonion-CE-mcp)**
+— **21 read+write tools** (`ping`, `get_alerts`, `query_events`, `suricata_add_rule`, `grid_command`, …) that
+work on the **FREE Community Edition** over OpenSearch + SSH. It also works with the official Pro MCP
+(`query_events`, `get_playbook_questions`), the Connect REST API, or the manager CLI — so it's useful on
+every grid, Community or Pro.
 
 > **Who is this for?** SOC analysts, threat hunters, incident responders, and blue teams running Security
 > Onion who want AI that speaks OQL, knows the Zeek/Suricata field taxonomy cold, and writes real Suricata,
@@ -108,36 +110,37 @@ The skill auto-detects your control plane and uses the best available:
 
 | Path | When | What it uses |
 |---|---|---|
-| **MCP server** *(preferred)* | The `securityonion` MCP is connected (Pro + Connect API) | `query_events`, `get_playbook_questions`, `ping` |
+| **CyberHawk CE MCP** *(preferred)* | The `securityonion` CE MCP is connected — **works on free Community Edition** | 21 read+write tools over OpenSearch + SSH |
+| **Official Pro MCP** | Pro license + Connect API | `query_events`, `get_playbook_questions`, `ping` (read-only) |
 | **Connect REST API** | Pro license, Hydra enabled, you have client ID/secret | OAuth2 + `curl` over `/connect/*` |
 | **Manager CLI** | You have SSH to the manager (works on free Community) | `so-*` commands + SaltStack |
 
-> **Pro vs Community:** the Connect API and MCP are **Pro/Enterprise** features. On the free **Community**
-> edition, the skill operates through the **SOC UI** (Claude writes OQL you paste into Hunt) and the
-> **manager CLI**. Everything in the skill still applies — only the transport changes.
+> **Community Edition is first-class here.** Unlike the official Pro MCP, the paired **CyberHawk CE MCP**
+> needs no license and no Connect API — it operates the grid over OpenSearch (reads) + SSH `so-*` (writes).
+> The skill's methodology applies on every edition; only the transport changes.
 
 ---
 
-## Connecting the Security Onion MCP (Pro grids)
+## Connecting an MCP backend
 
-If you have a Pro grid with the Connect API enabled, wire up the official MCP so Claude can query it live:
+**Community Edition (recommended)** — pair with the CyberHawk CE MCP for full read+write on free CE:
 
 ```bash
-# 1. Install the MCP server
+git clone https://github.com/rudraverma/securityonion-CE-mcp && cd securityonion-CE-mcp
+python -m venv venv && venv\Scripts\activate      # Windows (or: source venv/bin/activate)
+pip install -r requirements.txt && pip install -e .
+copy .env.example .env.local                       # fill SO_OS_PASSWORD, SO_SSH_PASSWORD, SO_SSH_HOSTKEY
+claude mcp add securityonion -s user -- <abs>\venv\Scripts\python.exe -m security_onion_mcp.server
+```
+
+**Pro grids** — the official MCP is read-oriented and needs a Connect API client:
+
+```bash
 git clone https://github.com/Security-Onion-Solutions/securityonion-mcp
-cd securityonion-mcp
-python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-
-# 2. Create an API Client in SOC → Administration → API Clients
-#    Grant: events/read, playbooks/read  (add detections/read as needed)
-
-# 3. Register it with Claude Code (one command)
+# create an API Client (events/read, playbooks/read), then:
 claude mcp add securityonion -s user \
-  -e SO_CLIENT_ID=YOURCLIENT \
-  -e SO_CLIENT_SECRET=YOURSECRET \
-  -e SO_API_ENDPOINT=https://yourmanager \
-  -e SO_API_VERIFY_SSL=true \
+  -e SO_CLIENT_ID=YOURCLIENT -e SO_CLIENT_SECRET=YOURSECRET \
+  -e SO_API_ENDPOINT=https://yourmanager -e SO_API_VERIFY_SSL=true \
   -- /path/to/securityonion-mcp/venv/bin/python /path/to/securityonion-mcp/security_onion_server.py
 ```
 

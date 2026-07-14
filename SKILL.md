@@ -8,9 +8,10 @@ description: >-
   Hunt/Alerts/PCAP/Cases interfaces, or asks to "check alerts", "hunt", "triage", "investigate", or
   "write a detection" on a Security Onion grid — even if they don't say the product name explicitly.
   Acts as a hands-on operator: fetches and triages alerts, runs investigations, pivots to PCAP, opens
-  cases, and authors/tunes Suricata, Sigma, and YARA detections. Drives the official Security Onion MCP
-  server (query_events, get_playbook_questions) when it is connected, and falls back to the Connect REST
-  API or manager CLI when it is not. Covers every Security Onion generation (legacy 16.04/1.x through
+  cases, and authors/tunes Suricata, Sigma, and YARA detections. Primarily drives the CyberHawk
+  Security Onion MCP (the `securityonion` server — 21 read+write tools over OpenSearch + SSH that work on
+  the FREE Community Edition); also works with the official Pro MCP (query_events, get_playbook_questions)
+  or the Connect REST API / manager CLI. Covers every Security Onion generation (legacy 16.04/1.x through
   2.3 Elastic and 2.4 OpenSearch) and both the free Community edition and the Pro/Enterprise license.
 license: Apache-2.0
 ---
@@ -30,14 +31,17 @@ durable detections. Work like a Tier 2/3 SOC analyst, not a documentation lookup
 
 Before doing anything, figure out which control plane you have. Pick the first that is available:
 
-1. **Security Onion MCP server connected** (tools `query_events`, `get_playbook_questions`, `ping`
-   under an MCP server usually named `securityonion`). This is the preferred operator path — you can
-   run OQL and pull playbook questions directly. Confirm with `ping` if unsure.
-2. **Connect REST API reachable** (Pro license, Hydra feature enabled). You have a client ID/secret and
-   the manager URL. Drive it with OAuth2 + `curl`/HTTP. See `references/connect-api.md`.
-3. **Manager shell access** (SSH to the SO manager). Use `so-*` commands and salt. See
+1. **CyberHawk CE MCP connected** (the `securityonion` server — **21 tools**, names like `ping`,
+   `query_events`, `get_alerts`, `suricata_add_rule`, `grid_command`). **This is the preferred operator
+   path** — full read AND write on the free Community Edition (OpenSearch for reads, SSH `so-*` for
+   writes). Run `ping` first. Full tool map + gating in `references/mcp-operator.md`.
+2. **Official Pro MCP connected** (tools `query_events`, `get_playbook_questions`, `ping`; needs a Pro
+   license + Connect API). Read-oriented — see `references/mcp-operator.md` §Official.
+3. **Connect REST API reachable** (Pro license, Hydra feature enabled). OAuth2 + `curl`/HTTP. See
+   `references/connect-api.md`.
+4. **Manager shell access** (SSH to the SO manager). Use `so-*` commands and salt. See
    `references/cli-grid-management.md`.
-4. **None of the above** — you can still be fully useful: write OQL the user pastes into the Hunt UI,
+5. **None of the above** — you can still be fully useful: write OQL the user pastes into the Hunt UI,
    author detections they import, and guide triage step by step.
 
 State which path you're on in one line, then proceed. If the user says "check alerts for HOSTNAME" and
@@ -59,8 +63,9 @@ FETCH → TRIAGE → INVESTIGATE → PIVOT (PCAP/host) → VERDICT → ACTION (c
 
 1. **FETCH** — pull the relevant alerts with OQL (`tags:alert | groupby ...`), scoped to the host/time.
 2. **TRIAGE** — group and rank. Which are new, high-severity, or clustered on one host/IP?
-3. **INVESTIGATE** — for a chosen alert, pull the playbook questions (`get_playbook_questions`) and
-   answer each with a targeted OQL query. Build the story: who, what, when, which direction.
+3. **INVESTIGATE** — read the alert's detail (`get_alert_detail`) for the 5-tuple, then answer the who/
+   what/when/direction with targeted OQL (`query_events`) and `pivot_connection`. (If the official Pro MCP
+   is present, `get_playbook_questions` gives curated per-alert questions to drive this.)
 4. **PIVOT** — follow the connection into Zeek logs (conn/dns/http/ssl/files), then to full PCAP if the
    grid retains it, and to host/endpoint logs (Elastic Agent / osquery).
 5. **VERDICT** — false positive, benign true positive, or true positive worth escalating. Say why.
@@ -104,23 +109,32 @@ it isn't, hand the same query to the user for the Hunt interface, or translate t
 
 ## Driving the Security Onion MCP server
 
-If the `securityonion` MCP is connected you have three tools. Details and recipes in
-`references/mcp-operator.md`.
+The preferred backend is the **CyberHawk CE MCP** (`securityonion`) — **21 read+write tools** that work on
+free Community Edition. Full tool map, gating rules, and recipes in `references/mcp-operator.md`. The ones
+you'll reach for constantly:
 
-| Tool | Signature | Use it to |
-|---|---|---|
-| `ping` | `ping()` | Confirm connectivity/auth before a session. |
-| `query_events` | `query_events(oql_query, start_time, end_time, limit=100, groupby_field)` | Run any OQL query over a time window. Your workhorse for fetch + investigate. `start_time`/`end_time` are separate (e.g. `start_time="-24h"`, `end_time="now"`); `groupby_field` appends `\| groupby <field>` for you. |
-| `get_playbook_questions` | `get_playbook_questions(alert_id, playbook_index)` | Given an alert's **`rule.uuid`**, get the investigation questions (question, context, answer_sources, suggested_query, time_range) for that alert type. |
+| Intent | Tool |
+|---|---|
+| Confirm connectivity (both backends) | `ping`, `grid_status` |
+| What's firing / triage in one call | `get_alerts`, `query_events` (OQL `\| groupby`) |
+| Alert detail / pivot / hunt | `get_alert_detail`, `pivot_connection`, `zeek_logs`, `hunt`, `list_indices` |
+| Full packet capture | `pcap_retrieve` |
+| **Author/tune detections (gated)** | `suricata_add_rule`, `suricata_remove_rule`, `suricata_tune`, `sigma_deploy`, `yara_deploy` |
+| Alerts / cases (gated) | `acknowledge_alert`, `case_create` |
+| Endpoint enrollment (gated) | `agent_installer`, `agent_list` |
+| Allow-listed grid ops (gated) | `grid_command`, `detections_status` |
 
-**Operator pattern for "investigate this alert":** get the alert's `rule.uuid`, call
-`get_playbook_questions(alert_id="<rule.uuid>")`, then for each returned question run its `suggested_query`
-(or your own) through `query_events`. Summarize answers into a verdict. This is exactly how a SOC playbook
-is meant to run — let the platform drive the questions.
+**Every write tool is gated** — `confirm=False` gives a dry-run/plan; set `confirm=True` to apply. Suricata
+rules are validated with `so-suricata-testrule` before deploy. Results are honest — a failure returns
+`{ok:false,...}`, never a fake success. Always confirm a state-changing action before firing it.
 
-The MCP is **read-oriented today** (query + playbooks). Acknowledging alerts, opening cases, and
-deploying detections are done through the Connect API, the SOC UI, or the manager CLI — route there when
-an action is needed and tell the user which path you took.
+> **CE Suricata deploy reality** (baked into `suricata_add_rule`): rule → `/opt/so/rules/nids/suri/local.rules`
+> → `so-rule-update` (compiles into the merged ruleset). Making it *active in the running engine* is
+> salt-gated; pass `activate=True` to force it with `so-suricata-restart` (slow ~4–5 min, brief NIDS gap).
+
+If instead the **official Pro MCP** is what's connected (tools `query_events`, `get_playbook_questions`,
+`ping`; needs Pro + Connect API), it's read-oriented — see `references/mcp-operator.md` §Official, and route
+writes to the SOC UI / Connect API / manager CLI.
 
 ---
 
