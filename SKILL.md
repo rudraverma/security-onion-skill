@@ -122,6 +122,7 @@ you'll reach for constantly:
 | **Author/tune detections (gated)** | `suricata_add_rule`, `suricata_remove_rule`, `suricata_tune`, `sigma_deploy`, `yara_deploy` |
 | Alerts / cases (gated) | `acknowledge_alert`, `case_create` |
 | Endpoint enrollment (gated) | `agent_installer`, `agent_list` |
+| **Fleet: integrations / agent+package policies (gated)** | `fleet_api` — GET reads; POST/PUT/DELETE add/modify integrations. The ONLY way to manage Elastic Agent integrations on SO (Kibana is walled off-box). See `references/fleet-integrations.md` |
 | Allow-listed grid ops (gated) | `grid_command`, `detections_status` |
 
 **Every write tool is gated** — `confirm=False` gives a dry-run/plan; set `confirm=True` to apply. Suricata
@@ -187,6 +188,7 @@ Load the reference that matches the task — don't read them all up front.
 | `references/alerts-triage.md` | Triaging the alert queue, ranking, false-positive workflow. |
 | `references/hunting.md` | Proactive hunts, hypotheses, ATT&CK-driven OQL hunt library. |
 | `references/detections.md` | Writing/tuning Suricata, Sigma, or YARA detections. |
+| `references/fleet-integrations.md` | Adding/modifying Elastic Agent integrations, agent/package policies via the Fleet API (Sysmon, PowerShell logging, etc.) — the `fleet_api` tool + the manager-only access method. |
 | `references/zeek-suricata-fields.md` | Field taxonomy for conn/dns/http/ssl/files/x509 + Suricata fields. |
 | `references/cases-pcap.md` | Escalating to a Case, retrieving and reading full PCAP. |
 | `references/connect-api.md` | No MCP — driving the grid over the Connect REST API with curl. |

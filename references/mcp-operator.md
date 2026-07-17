@@ -80,6 +80,12 @@ is a full operator (read **and** write). The **official** MCP is read-oriented a
 
 **Agents & grid (WRITE, gated)**
 - `agent_installer(os, policy=None, confirm=False)` — `so-elastic-agent-gen-installers` for windows/linux/macos.
+- `fleet_api(method="GET", path="", body=None, confirm=False)` — the **native Fleet API** caller (Kibana on the
+  manager's localhost:5601, auth via curl.config as so_elastic; GET reads, POST/PUT/DELETE gated). The ONLY
+  way to manage Elastic Agent **integrations / agent policies / package policies** on SO — Kibana is walled
+  off-box (nginx/Kratos on 443 ignores API keys; 5601 firewalled). `path` must start with `/api/fleet`.
+  e.g. `fleet_api("GET","/api/fleet/agent_policies")`, or `POST /api/fleet/package_policies` to add a
+  winlog/Sysmon input. Payload shapes + input-package quirks: **`references/fleet-integrations.md`**.
 - `grid_command(command, confirm=False, reason="")` — hard allow-list of `so-*` (restart/reload/status);
   destructive ones (`so-restart/-stop/-start`) require `confirm` + `reason`. Never an arbitrary shell.
 
